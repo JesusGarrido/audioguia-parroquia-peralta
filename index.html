@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#201e1d">
+<title>Prueba · Audioguía</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{--bg:#201e1d;--fg:#f3f2f2;--muted:#bab6b6;--acc:#ff563c;--rule:rgba(243,242,242,.38)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:18px/1.5 system-ui,"Segoe UI",Roboto,sans-serif}
+main{max-width:520px;margin:0 auto;padding:24px 20px 56px}
+.kicker{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#ff9783;font-weight:600}
+h1{font-size:34px;line-height:1.05;margin:8px 0 12px;letter-spacing:-.02em}
+h2{font-size:20px;margin:28px 0 8px}
+p{margin:0 0 14px;color:var(--muted)}
+.rows{border-top:2px solid var(--rule);margin:16px 0}
+.row{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:2px solid var(--rule)}
+.row span:last-child{font-weight:800;text-align:right}
+.ok{color:#9be29b}.no{color:#ff9783}
+button{font:inherit;font-weight:800;min-height:56px;width:100%;border:0;background:var(--acc);color:var(--bg);padding:0 18px;text-align:left;cursor:pointer;margin:8px 0}
+button.sec{background:transparent;color:var(--fg);border:2px solid var(--rule)}
+button:disabled{opacity:.5}
+.seek{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.seek button{margin:0}
+audio{width:100%;margin:12px 0}
+:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
+small{color:var(--muted);display:block;margin-top:24px}
+</style>
+</head>
+<body>
+<main>
+  <div class="kicker">Audioguía · Parroquia de Peralta</div>
+  <h1>Página de prueba</h1>
+  <p>Sirve para comprobar en el móvil tres cosas: que el audio suena, que funciona sin conexión y que se puede instalar como aplicación. No es la audioguía definitiva.</p>
+
+  <h2>1. Audio</h2>
+  <p>Dura 45 segundos y tiene tres tonos de 15 segundos cada uno. Los botones de ±15 s deben saltar de un tono al siguiente.</p>
+  <audio id="audio" controls preload="none" src="audio/prueba.mp3"></audio>
+  <div class="seek">
+    <button class="sec" id="back" type="button">⟲ 15 s atrás</button>
+    <button class="sec" id="fwd" type="button">15 s adelante ⟳</button>
+  </div>
+
+  <h2>2. Sin conexión</h2>
+  <p>Pulse el botón, espere al mensaje «Listo» y ponga el móvil en modo avión. El audio debería seguir sonando.</p>
+  <button id="dl" type="button">Guardar el audio para usarlo sin conexión</button>
+  <p id="dlmsg" aria-live="polite"></p>
+
+  <h2>3. Instalar</h2>
+  <p>En Android (Chrome) aparecerá un botón. En iPhone (Safari): Compartir → Añadir a pantalla de inicio.</p>
+  <button id="inst" type="button" hidden>Instalar como aplicación</button>
+
+  <h2>Estado</h2>
+  <div class="rows">
+    <div class="row"><span>Hay conexión</span><span id="st-net">…</span></div>
+    <div class="row"><span>Página guardada en el móvil</span><span id="st-sw">…</span></div>
+    <div class="row"><span>Audio guardado para uso sin conexión</span><span id="st-cache">…</span></div>
+    <div class="row"><span>Abierta como aplicación instalada</span><span id="st-app">…</span></div>
+  </div>
+  <small>Versión de prueba 1</small>
+</main>
+<script>
+var CACHE = 'prueba-v1', AUDIO = 'audio/prueba.mp3';
+function $(id){ return document.getElementById(id); }
+function set(id, ok, yes, no){ var e = $(id); e.textContent = ok ? yes : no; e.className = ok ? 'ok' : 'no'; }
+function net(){ set('st-net', navigator.onLine, 'Sí', 'No'); }
+addEventListener('online', net); addEventListener('offline', net); net();
+
+async function cached(){
+  try { var c = await caches.open(CACHE); return !!(await c.match(AUDIO)); } catch (e) { return false; }
+}
+async function refresh(){
+  set('st-cache', await cached(), 'Sí', 'No');
+  var standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  set('st-app', standalone, 'Sí', 'No (abierta en el navegador)');
+  set('st-sw', 'serviceWorker' in navigator && !!navigator.serviceWorker.controller, 'Sí', 'Todavía no (recargue la página una vez)');
+}
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').then(function(){ return navigator.serviceWorker.ready; }).then(refresh).catch(refresh);
+  navigator.serviceWorker.addEventListener('controllerchange', refresh);
+} else { refresh(); }
+
+$('dl').onclick = async function(){
+  var b = $('dl'); b.disabled = true; $('dlmsg').textContent = 'Descargando…';
+  try {
+    var c = await caches.open(CACHE); await c.add(AUDIO);
+    $('dlmsg').textContent = 'Listo. Ya puede probar a poner el móvil en modo avión.';
+  } catch (e) { $('dlmsg').textContent = 'No se pudo guardar: ' + e.message; }
+  b.disabled = false; refresh();
+};
+
+var a = $('audio');
+$('back').onclick = function(){ a.currentTime = Math.max(0, a.currentTime - 15); };
+$('fwd').onclick = function(){ a.currentTime = Math.min(a.duration || 1e9, a.currentTime + 15); };
+
+var deferred;
+addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); deferred = e; $('inst').hidden = false; });
+$('inst').onclick = async function(){ if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('inst').hidden = true; };
+addEventListener('appinstalled', refresh);
+</script>
+</body>
+</html>
